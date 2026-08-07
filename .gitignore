@@ -1,0 +1,28 @@
+# Python virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+
+# Model artifacts and generated binaries
+*.bin
+*.onnx
+*.onnx.json
+*.argosmodel
+*.pt
+*.pth
+*.model
+
+# Converted and generated translation model directory
+opus-mt-es-en-int8/
+
+# Local audio translator assets
+audio_translator/ggml-tiny-q8_0.bin
+audio_translator/translate-es_en-1_9.argosmodel
+audio_translator/Piper/
+audio_translator/Voices/

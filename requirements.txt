@@ -1,0 +1,5 @@
+argostranslate==1.11.0
+ctranslate2==4.7.1
+sentencepiece==0.2.1
+transformers==5.5.4
+onnxruntime==1.24.4
