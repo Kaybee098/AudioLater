@@ -1,151 +1,109 @@
-# Edge & Optimization on Wearable AI Audio Translator
+# Edge AI Wearable Audio Translator
 
-An offline, edge-oriented audio translation prototype designed to convert spoken Spanish into English using local speech recognition, machine translation, and text-to-speech components. The project is structured around lightweight, deployable AI assets that can run without relying on cloud services.
+An offline Spanish-to-English audio translation prototype for low-power edge hardware. The intended pipeline runs speech recognition, machine translation, and speech synthesis locally, keeping audio and text on the device and avoiding cloud latency and connectivity requirements.
 
----
+## Architecture
 
-## 1. Project Overview
-
-This repository explores a wearable-style, low-latency translation pipeline for edge hardware. It combines:
-
-- speech-to-text for local audio transcription,
-- neural machine translation for Spanish-to-English conversion, and
-- text-to-speech synthesis for spoken English output.
-
-The goal is to provide a practical foundation for running translation workloads locally on resource-constrained devices such as single-board computers or embedded systems.
-
----
-
-## 2. Key Features
-
-- Offline-first translation workflow with local model assets
-- Support for converting Hugging Face translation models to compact INT8 format
-- Local speech recognition and synthesis components using bundled model files
-- Lightweight directory structure suitable for experimentation and edge deployment
-- Modular scripts for translation model conversion and application entry points
-
----
-
-## 3. Tech Stack & Hardware
-
-### Programming Languages
-- Python 3
-
-### Core Libraries and Frameworks
-- CTranslate2 for efficient model inference and conversion
-- Transformers for loading and preparing compatible model pipelines
-- ONNX-based voice assets for local text-to-speech generation
-- Local model artifacts such as Argos Translate and CTranslate2-compatible translation weights
-
-### Target Hardware / Runtime Environment
-- Edge devices such as Raspberry Pi, Jetson boards, or other ARM/x86_64 systems
-- Any workstation with sufficient CPU and memory to run local inference
-- Best results are typically achieved on systems with:
-  - a modern CPU,
-  - available RAM for model loading,
-  - and enough storage for downloaded or bundled model files
-
-> [!NOTE]
-> This project is intended for local experimentation and edge deployment, but runtime performance depends heavily on the host hardware and the size of the loaded models.
-
----
-
-## 4. Directory Architecture
-
-```text
-edge_and_optimization_on_wearable_AI_audio_translator/
-├── README.md                                 # Project documentation
-├── audio_translator/                        # Main application workspace
-│   ├── convert_mach_trans.py                # Converts a Hugging Face translation model to INT8
-│   ├── main_translator.py                   # Entry point for the translation pipeline
-│   ├── ggml-tiny-q8_0.bin                   # Local speech-to-text model asset
-│   ├── translate-es_en-1_9.argosmodel       # Local Argos translation model asset
-│   ├── Piper/                                # Piper text-to-speech runtime assets
-│   ├── Voices/                               # Local voice model files for TTS
-│   │   ├── en_US-ryan-low.onnx               # Voice model file
-│   │   └── en_US-ryan-low.onnx.json          # Voice model metadata
-│   └── README.md                             # Project-specific notes inside the app folder
-└── opus-mt-es-en-int8/                      # Converted machine translation model directory
-    ├── config.json                           # Model configuration
-    └── shared_vocabulary.json                # Shared token vocabulary
+```mermaid
+flowchart LR
+    A[WAV or microphone] --> B[Whisper.cpp\nQ8_0 STT]
+    B --> C[Spanish text]
+    C --> D[MarianMT\nCTranslate2 INT8]
+    D --> E[English text]
+    E --> F[Piper\nONNX TTS]
+    F --> G[English WAV]
 ```
 
----
+The current repository has a working Whisper subprocess wrapper and an INT8 model conversion utility. `audio_translator/main_translator.py` is still an empty orchestration scaffold, and the checked-in `audio_translator/Piper/` and `audio_translator/Voices/` directories are empty. The detailed documentation describes both the implemented components and the target production integration contract.
 
-## 5. Prerequisites & Installation
+## Repository layout
+
+```text
+.
+├── audio_translator/
+│   ├── Transcriber/test_whisper.py       # Whisper CLI wrapper
+│   ├── convert_mach_trans.py             # CTranslate2 INT8 conversion
+│   ├── main_translator.py                # End-to-end scaffold
+│   ├── Piper/                            # Provision Piper here
+│   └── Voices/                           # Provision ONNX voice here
+├── opus-mt-es-en-int8/                   # Local CTranslate2 model
+├── docs/                                 # Architecture and deployment guides
+├── requirements.txt
+└── README.md
+```
+
+## Fast start
 
 ### Prerequisites
 
-Before installing dependencies, make sure you have:
+- Python 3.9 or newer
+- A matching Whisper.cpp runtime (`whisper-cli.exe` on the current Windows setup)
+- The Whisper model `ggml-tiny-q8_0.bin`
+- Piper runtime and an English ONNX voice for TTS
+- CPU and memory capacity appropriate for local inference
 
-- Python 3.9+ installed
-- A terminal or PowerShell session available
-- Internet access if you want to download or convert additional model files
+### Install Python dependencies
 
-### Windows PowerShell Setup
+Windows PowerShell:
 
 ```powershell
-cd C:\path\to\edge_and_optimization_on_wearable_AI_audio_translator
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+python -m venv venv
+.\venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-pip install ctranslate2 transformers sentencepiece
+python -m pip install -r requirements.txt
 ```
 
-### Linux / macOS Setup
+Linux:
 
 ```bash
-cd /path/to/edge_and_optimization_on_wearable_AI_audio_translator
 python3 -m venv .venv
-source .venv/bin/activate
+. .venv/bin/activate
 python -m pip install --upgrade pip
-pip install ctranslate2 transformers sentencepiece
+python -m pip install -r requirements.txt
 ```
 
-### Model Assets
+### Run the implemented STT smoke test
 
-The repository already includes several local assets, but if you want to regenerate the translation model, run the conversion script from the project directory.
+Place `whisper-cli.exe`, its matching DLLs, and `ggml-tiny-q8_0.bin` in `audio_translator/Transcriber/`, then run:
 
----
+```powershell
+python audio_translator/Transcriber/test_whisper.py
+```
 
-## 6. Usage / Execution
+The current script always uses `audio_translator/Transcriber/test_audio.wav` and does not yet expose CLI arguments. The command prints the Spanish transcript when the bundled Whisper runtime succeeds. This is an STT test, not yet a complete translation run.
 
-### Convert a Translation Model to INT8
+### Generate the INT8 translation model
 
-The repository includes a conversion utility that downloads and converts a Hugging Face Spanish-to-English model into a compact INT8 format.
+From the repository root, with network access for the initial download:
 
-```bash
+```powershell
 python audio_translator/convert_mach_trans.py
 ```
 
-This script uses CTranslate2 to create a local model folder named `opus-mt-es-en-int8` in the workspace.
+The converter downloads `Helsinki-NLP/opus-mt-es-en` and writes a CTranslate2 INT8 model to `opus-mt-es-en-int8/`. The generated directory is ignored by Git, so retain it as a deployment artifact or regenerate it during provisioning.
 
-### Run the Translator Entry Point
+## Model weights and runtime assets
 
-```bash
-python audio_translator/main_translator.py
-```
+Provision these assets at the paths expected by the code and target runtime:
 
-> [!WARNING]
-> The current entry script is a scaffold and may require further implementation before it fully executes the full speech-to-text, translation, and speech synthesis workflow end to end.
+| Asset | Required location | Purpose |
+|---|---|---|
+| `ggml-tiny-q8_0.bin` | `audio_translator/Transcriber/` | Quantized Spanish STT |
+| `whisper-cli.exe` and matching DLLs | `audio_translator/Transcriber/` | Whisper.cpp execution on Windows |
+| `model.bin`, `config.json`, vocabulary | `opus-mt-es-en-int8/` | CTranslate2 INT8 Spanish-to-English MT |
+| Piper executable/runtime | `audio_translator/Piper/` | Offline TTS execution |
+| `en_US-ryan-low.onnx` and `.json` | `audio_translator/Voices/` | English Piper voice |
 
-### Expected Workflow
+Large model and binary assets are excluded by `.gitignore`. Record their versions and checksums in a release manifest before deploying to a device.
 
-1. Load local speech-to-text assets.
-2. Transcribe incoming audio.
-3. Translate the recognized text.
-4. Synthesize the translated text into spoken English.
+## Documentation
 
----
+- [Runtime tracker](docs/runtime_tracker.md)
+- [System architecture](docs/01_architecture.md)
+- [Mermaid diagrams](docs/02_diagrams.md)
+- [Pipeline and API reference](docs/03_pipeline_reference.md)
+- [Deployment and optimization guide](docs/04_deployment_and_optimization.md)
 
-## 7. Notes for Reproducibility
+## License
 
-- Keep the model directories near the repository root or adjust paths in your scripts if you move them.
-- Long model downloads and conversions may take significant time and disk space.
-- For edge hardware, smaller quantized models often provide a better balance between memory usage and throughput.
-
----
-
-## 8. License
-
-This project is distributed under the license included in the repository. Please review the license file before redistribution or commercial use.
+See [audio_translator/LICENSE](audio_translator/LICENSE).

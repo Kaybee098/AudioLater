@@ -26,3 +26,8 @@ audio_translator/ggml-tiny-q8_0.bin
 audio_translator/translate-es_en-1_9.argosmodel
 audio_translator/Piper/
 audio_translator/Voices/
+
+# Ignore all Transcriber runtime assets except the test wrapper and audio fixture
+audio_translator/Transcriber/*
+!audio_translator/Transcriber/test_whisper.py
+!audio_translator/Transcriber/test_audio.wav
