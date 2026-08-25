@@ -1,15 +1,22 @@
+from pathlib import Path
+
 import ctranslate2
+from transformers import AutoTokenizer
 
 print("Downloading and converting Hugging Face model to INT8...")
 
-# 1. Point to the Hugging Face model
-converter = ctranslate2.converters.TransformersConverter("Helsinki-NLP/opus-mt-es-en")
+MODEL_NAME = "Helsinki-NLP/opus-mt-es-en"
+OUTPUT_DIR = Path(__file__).resolve().parent / "Translator" / "opus-mt-es-en-int8"
 
-# 2. Convert and save it to a new folder in your current directory
+converter = ctranslate2.converters.TransformersConverter(MODEL_NAME)
+
 converter.convert(
-    output_dir="opus-mt-es-en-int8", 
+    output_dir=str(OUTPUT_DIR),
     quantization="int8",
-    force=True # Overwrites if the folder already exists
+    force=True,
 )
 
-print("Success! The INT8 model has been saved to the 'opus-mt-es-en-int8' folder.")
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+tokenizer.save_pretrained(OUTPUT_DIR)
+
+print(f"Success! The INT8 model and tokenizer were saved to {OUTPUT_DIR}.")
