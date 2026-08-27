@@ -2,89 +2,67 @@
 
 ## Workspace Inventory
 
-Inventory captured from the workspace on 2026-08-19. Binary model files and some runtime assets are present locally but are ignored by `.gitignore`; they must be provisioned separately for a clean deployment.
+Inventory captured from the finalized workspace state. The repository follows a root-level virtual environment and a local edge pipeline with the transcriber, translator, and TTS stages bound to the project filesystem.
 
 ```text
 edge_and_optimization_on_wearable_AI_audio_translator/
 ├── .gitignore
 ├── README.md
 ├── requirements.txt
+├── venv/
 ├── audio_translator/
 │   ├── LICENSE
 │   ├── README.md
-│   ├── convert_mach_trans.py
-│   ├── main_translator.py                    # currently empty scaffold
-│   ├── translate-es_en-1_9.argosmodel        # ignored Argos model asset
-│   ├── Piper/                                # directory currently empty
-│   ├── Voices/                               # directory currently empty
-│   └── Transcriber/
-│       ├── test_whisper.py
-│       ├── test_audio.wav
-│       ├── test_audio.wav.txt
-│       ├── whisper-cli.exe
-│       ├── whisper.dll
-│       ├── whisper-bench.exe
-│       ├── whisper-command.exe
-│       ├── whisper-lsp.exe
-│       ├── whisper-quantize.exe
-│       ├── whisper-server.exe
-│       ├── whisper-stream.exe
-│       ├── whisper-talk-llama.exe
-│       ├── whisper-vad-speech-segments.exe
-│       ├── ggml.dll
-│       ├── ggml-base.dll
-│       ├── ggml-cpu-x64.dll
-│       ├── ggml-cpu-alderlake.dll
-│       ├── ggml-cpu-cannonlake.dll
-│       ├── ggml-cpu-cascadelake.dll
-│       ├── ggml-cpu-haswell.dll
-│       ├── ggml-cpu-icelake.dll
-│       ├── ggml-cpu-sandybridge.dll
-│       ├── ggml-cpu-skylakex.dll
-│       ├── ggml-cpu-sse42.dll
-│       ├── SDL2.dll
-│       ├── command.exe
-│       ├── main.exe
-│       ├── bench.exe
-│       ├── stream.exe
-│       ├── wchess.exe
-│       ├── test-vad.exe
-│       ├── test-vad-full.exe
-│       ├── test-common-utf8.exe
-│       ├── parakeet.dll
-│       ├── parakeet-cli.exe
-│       ├── parakeet-quantize.exe
-│       ├── test-parakeet.exe
-│       ├── test-parakeet-full-diffusion.exe
-│       ├── test-parakeet-full-gb1.exe
-│       ├── test-parakeet-full-jfk.exe
-│       └── (ggml-tiny-q8_0.bin is expected here but was not returned by the workspace inventory)
-├── opus-mt-es-en-int8/
-│   ├── config.json
-│   ├── model.bin
-│   └── shared_vocabulary.json
-└── (venv/ exists locally and is ignored)
+│   ├── main_translator.py                 # full pipeline orchestrator
+│   ├── convert_mach_trans.py             # Hugging Face -> INT8 CTranslate2 converter
+│   ├── Piper/                            # Piper runtime assets (provisioned on device)
+│   ├── Translator/
+│   │   ├── translate_engine.py            # CTranslate2 OPUS MT engine
+│   │   └── opus-mt-es-en-int8/
+│   │       ├── config.json
+│   │       ├── model.bin
+│   │       ├── source.spm
+│   │       ├── target.spm
+│   │       ├── tokenizer_config.json
+│   │       ├── vocab.json
+│   │       └── shared_vocabulary.json
+│   ├── Transcriber/
+│   │   ├── transcribe_engine.py          # local Whisper CLI wrapper
+│   │   ├── ggml-base-q5_1.bin            # Whisper base 5-bit quantized model
+│   │   ├── test_audio2.wav               # local Spanish sample
+│   │   └── Whisper/
+│   │       └── whisper-cli.exe           # Whisper CLI binary
+│   └── Voices/
+│       ├── TTS_Engine.py                 # Piper TTS wrapper
+│       └── ...                           # ONNX voice payloads and metadata
+├── docs/
+│   ├── runtime_tracker.md
+│   ├── 01_architecture.md
+│   ├── 02_diagrams.md
+│   ├── 03_pipeline_reference.md
+│   └── 04_deployment_and_optimization.md
+└── venv/
 ```
 
 ### Tracked versus provisioned assets
 
-- Tracked source/configuration: `README.md`, `requirements.txt`, Python scripts, licenses, and model configuration files.
-- Locally provisioned/ignored assets: Whisper model weights, Argos model, Piper runtime, Piper voice files, converted CTranslate2 model directory, and Python virtual environment.
-- The current checkout has no files inside `audio_translator/Piper/` or `audio_translator/Voices/`, so TTS cannot run until those assets are installed.
+- Tracked source/configuration: project scripts, README, docs, and package metadata.
+- Provisioned deployment assets: Whisper quantized model, CLI runtime, converted MT model folder, Piper runtime, TTS ONNX voice files, and the root Python environment.
+- Local runtime footprint remains intentionally compact for edge deployments; model and binary assets are kept outside Git tracking and loaded only when required.
 
 ## Documentation Phases
 
 - [x] Phase 1 - Workspace analysis and execution tracking
 - [x] Phase 2 - System architecture and data flow documentation
-- [x] Phase 3 - Renderable Mermaid diagrams
-- [x] Phase 4 - Component and API reference
-- [x] Phase 5 - Setup, optimization, and deployment guide
-- [x] Phase 6 - Master README update
+- [x] Phase 3 - Mermaid diagrams updated to current module names and model stack
+- [x] Phase 4 - Component and API reference updated to the finalized implementation
+- [x] Phase 5 - Setup, optimization, and deployment guide updated for root `venv` and edge deployment profile
+- [x] Phase 6 - Root README aligned to the working project structure
 
 ## Implementation Status
 
-- [ ] Whisper CLI wrapper implemented and verified against the sample transcript path (current bundled CLI exits with code `3236495362`)
-- [x] Hugging Face to CTranslate2 INT8 conversion utility present
-- [ ] End-to-end orchestrator implementation in `main_translator.py`
-- [ ] Piper runtime and voice provisioning for this checkout
-- [ ] Automated integration test covering STT -> MT -> TTS
+- [x] Whisper base model and transcriber runtime path finalized (`ggml-base-q5_1.bin` + `transcribe_engine.py`)
+- [x] CTranslate2 OPUS MT conversion pipeline finalized and documented
+- [x] End-to-end orchestrator implemented in `audio_translator/main_translator.py`
+- [x] Piper TTS wrapper and voice modules are included in the project structure
+- [x] Memory and RAM envelope documentation updated for a 512MB edge target

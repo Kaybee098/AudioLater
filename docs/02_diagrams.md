@@ -1,17 +1,17 @@
 # Visual System Diagrams
 
-The diagrams use Mermaid syntax and can be rendered by GitHub, VS Code Markdown preview, or a Mermaid-compatible documentation site.
+The diagrams use Mermaid syntax and reflect the current project modules and the finalized edge pipeline.
 
 ## End-to-end pipeline
 
 ```mermaid
 flowchart LR
     A[WAV file or microphone] --> B[Audio capture and framing]
-    B --> C[whisper-cli.exe\nQ8_0 Whisper model]
-    C --> D[Spanish tokenized text]
-    D --> E[ArgosMT / Helsinki-NLP\nCTranslate2 INT8]
+    B --> C[transcribe_engine.py\nWhisper base-q5_1]
+    C --> D[Spanish transcript in memory]
+    D --> E[translate_engine.py\nHelsinki-NLP/opus-mt-es-en\nINT8 CTranslate2]
     E --> F[English translated text]
-    F --> G[Piper TTS\nONNX voice]
+    F --> G[TTS_Engine.py\nPiper ONNX]
     G --> H[English WAV output]
 ```
 
@@ -20,26 +20,24 @@ flowchart LR
 ```mermaid
 sequenceDiagram
     participant App as main_translator.py
-    participant STT as test_whisper.py
+    participant STT as transcribe_engine.py
     participant W as whisper-cli.exe
+    participant MT as translate_engine.py
+    participant TTS as TTS_Engine.py
     participant FS as Local filesystem
-    participant MT as CTranslate2 MT
-    participant TTS as Piper
 
-    App->>STT: transcribe_audio(file_path, threads)
-    STT->>FS: Resolve input, executable, and model paths
-    STT->>W: subprocess.run(cwd=Transcriber, -m model, -l es, -f input)
-    Note over W: --no-timestamps --no-context
-    W-->>STT: return code/stdout/stderr
-    STT-->>App: Spanish transcript string in memory
-    App->>MT: Tokenize and translate in memory
+    App->>STT: transcribe_audio(file_path)
+    STT->>W: subprocess.run(cwd=Transcriber, -m ggml-base-q5_1.bin, -l es, -tp 0.0, -bs 5, -mc 0, -nt)
+    W-->>STT: return code / stdout / stderr
+    STT-->>App: Spanish transcript string
+    App->>MT: translate_text(transcript)
     MT-->>App: English text
-    App->>TTS: Send text and voice configuration
+    App->>TTS: text_to_speech(translation, output_name)
     TTS-->>FS: Write English WAV
-    App-->>App: Apply bounded buffers or batch result handling
+    App-->>App: Release the STT process memory before continued execution
 ```
 
-The current repository implements the STT sequence only. The MT and TTS calls are the integration contract for the pending orchestrator.
+The STT subprocess is intentionally isolated so its RAM can be released before the MT and TTS stages begin, which reduces maximum memory pressure on the board.
 
 ## Module relationship
 
@@ -49,18 +47,24 @@ graph TD
     Root --> Req[requirements.txt]
     Root --> Docs[docs]
     Root --> App[audio_translator]
-    Root --> MTModel[opus-mt-es-en-int8]
+    Root --> VEnv[venv/]
 
+    App --> Main[main_translator.py]
     App --> Convert[convert_mach_trans.py]
-    Convert --> HF[Helsinki-NLP/opus-mt-es-en]
-    Convert --> MTModel
-    App --> Main[main_translator.py\nempty scaffold]
     App --> Transcriber[Transcriber]
-    Transcriber --> Wrapper[test_whisper.py]
-    Wrapper --> Whisper[whisper-cli.exe]
-    Wrapper --> WhisperModel[ggml-tiny-q8_0.bin\nprovisioned asset]
-    App --> Piper[Piper/\ncurrently empty]
-    App --> Voices[Voices/\ncurrently empty]
-    Voices --> Voice[en_US-ryan-low.onnx + JSON\nprovisioned asset]
-    MTModel --> MTFiles[model.bin + config + vocabulary]
+    App --> Translator[Translator]
+    App --> Voices[Voices]
+    App --> Piper[Piper/]
+
+    Convert --> HF[Helsinki-NLP/opus-mt-es-en]
+    Convert --> MTModel[opus-mt-es-en-int8]
+    MTModel --> MTFiles[model.bin + tokenizer + vocab]
+
+    Transcriber --> Engine[transcribe_engine.py]
+    Engine --> Whisper[Whisper/whisper-cli.exe]
+    Engine --> WhisperModel[ggml-base-q5_1.bin]
+
+    Translator --> NMT[translate_engine.py]
+    Voices --> TTS[TTS_Engine.py]
+    Piper --> PiperRuntime[Piper runtime / ONNX]
 ```

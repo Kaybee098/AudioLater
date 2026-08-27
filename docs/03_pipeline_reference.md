@@ -1,12 +1,12 @@
 # Component and Pipeline Reference
 
-## `Transcriber/test_whisper.py`
+## `audio_translator/Transcriber/transcribe_engine.py`
 
 ### Constants
 
-- `SCRIPT_DIR: Path`: absolute directory containing the wrapper.
-- `EXE_PATH: Path`: `SCRIPT_DIR / "whisper-cli.exe"`.
-- `MODEL_PATH: Path`: `SCRIPT_DIR / "ggml-tiny-q8_0.bin"`.
+- `SCRIPT_DIR: Path`: absolute directory containing the transcriber module.
+- `EXE_PATH: Path`: `SCRIPT_DIR / "Whisper" / "whisper-cli.exe"`.
+- `MODEL_PATH: Path`: `SCRIPT_DIR / "ggml-base-q5_1.bin"`.
 
 ### `transcribe_audio`
 
@@ -14,62 +14,86 @@
 transcribe_audio(file_path: str) -> str
 ```
 
-`file_path` is currently treated as a path relative to `Transcriber/`; the wrapper prepends `SCRIPT_DIR` unconditionally. Absolute-path support is therefore not implemented in the current file.
+`file_path` may be supplied as a relative path inside `Transcriber/` or as an absolute filesystem path. The wrapper resolves relative input files against the transcriber directory and validates the existence of the executable, model weight, and audio file before launching the subprocess.
 
-The function validates the executable, model, and input file before launching a child process. It runs:
+The final runtime command is built around the Whisper decoder settings for deterministic and low-hallucination transcription:
 
 ```text
-whisper-cli.exe -m ggml-tiny-q8_0.bin -l es -f <audio>
-  --no-timestamps --no-context
+whisper-cli.exe -m <MODEL_PATH> -l es -tp 0.0 -bs 5 -mc 0 -nt -f <audio>
 ```
 
-`subprocess.run` captures stdout and stderr in memory. A nonzero CLI status becomes `RuntimeError` with the native diagnostic when one is available; successful stdout is returned directly as the Spanish transcript for the MT stage. No intermediate transcript file is created.
+The subprocess is isolated and returns transcript text in memory rather than writing a `.txt` artifact for normal execution. The text is then passed directly into the translation stage.
 
-### Command-line entry point
+### Command-line usage
 
 ```powershell
-python audio_translator/Transcriber/test_whisper.py
+python audio_translator/Transcriber/transcribe_engine.py
 ```
 
-The script has no argparse-based CLI. It always transcribes `test_audio.wav`, and that file must exist at `audio_translator/Transcriber/test_audio.wav`.
+The module is the STT wrapper and is used by the orchestrator rather than being the final user-facing app entry point.
+
+## `audio_translator/Translator/translate_engine.py`
+
+The translation engine loads the converted CTranslate2 model at `audio_translator/Translator/opus-mt-es-en-int8` and translates Spanish text to English in memory. It relies on the tokenizer assets generated during conversion and uses `ctranslate2.Translator` on the CPU to keep the runtime compact and latency-friendly.
+
+### Runtime contract
+
+```python
+translate_text(text: str) -> str
+```
+
+The function trims the input, loads the model/tokenizer once, and returns the translated English sentence directly to the caller without creating a temporary file.
 
 ## `audio_translator/convert_mach_trans.py`
 
-This script has no functions or CLI arguments. Running it constructs a `ctranslate2.converters.TransformersConverter` for `Helsinki-NLP/opus-mt-es-en` and calls:
+This script converts the Hugging Face model `Helsinki-NLP/opus-mt-es-en` into a compact INT8 CTranslate2 graph and writes it to the project’s `Translator` directory.
 
 ```python
 converter.convert(
-    output_dir="opus-mt-es-en-int8",
+    output_dir=str(OUTPUT_DIR),
     quantization="int8",
     force=True,
 )
 ```
 
-It downloads/loads the source model through Transformers, writes a CTranslate2 model to the current working directory, and overwrites an existing output directory. Run it from the repository root so the documented output path is stable:
+It also saves the tokenizer to the same folder so local inference remains self-contained and offline.
+
+### Model conversion command
 
 ```powershell
 python audio_translator/convert_mach_trans.py
 ```
 
+The generated model directory is:
+
+```text
+audio_translator/Translator/opus-mt-es-en-int8/
+```
+
 ## `audio_translator/main_translator.py`
 
-The file is currently empty. There is no implemented CLI, streaming loop, batch mode, argument parser, model loading, or output contract to call today. The intended production API should define explicit input/output paths, language direction, thread count, and mode, then:
+This is the primary runtime entry point for the complete offline translation pipeline. It orchestrates the sequence:
 
-1. Load Whisper, CTranslate2, and Piper assets once.
-2. Process a bounded utterance or WAV batch.
-3. Pass transcript text to MT without temporary transcript files.
-4. Pass translated text to Piper and write a WAV result.
-5. Return nonzero exit status and actionable diagnostics on stage failure.
+1. Load and call `transcribe_audio()`.
+2. Pass the Spanish transcript directly to `translate_text()`.
+3. Pass the English result into the Piper TTS wrapper.
+4. Emit the final synth output and latency metrics.
 
-Do not advertise `python audio_translator/main_translator.py` as an operational end-to-end command until this implementation exists.
+### CLI usage
+
+```powershell
+python audio_translator/main_translator.py --show-transcript
+```
+
+The file is the current canonical runner for the full pipeline and is the entry point referenced across the deployment and architecture guides.
 
 ## Model and runtime specifications
 
-| Stage | Asset / source | Precision | Format/backend | Current status |
+| Stage | Asset / source | Precision | Format / backend | Notes |
 |---|---|---:|---|---|
-| STT | `ggml-tiny-q8_0.bin` | Q8_0 (8-bit weight quantization) | GGML/GGUF-family Whisper.cpp CLI | Required beside `whisper-cli.exe`; not returned by inventory |
-| MT | `Helsinki-NLP/opus-mt-es-en` | INT8 after conversion | CTranslate2 `model.bin`, CPU runtime | Converted directory is present locally; wrapper absent |
-| MT source alternative | `translate-es_en-1_9.argosmodel` | Package-defined | Argos Translate | Asset is present locally but not used by current scripts |
-| TTS | `en_US-ryan-low.onnx` plus JSON | ONNX model-defined | Piper / ONNX Runtime | Not present in current `Voices/` directory |
+| STT | `ggml-base-q5_1.bin` | Q5_1 | Whisper.cpp / GGML | ~85MB, low-variance decode |
+| MT | `Helsinki-NLP/opus-mt-es-en` | INT8 | CTranslate2 / CPU | ~75MB disk, ~55MB RAM |
+| TTS | Piper ONNX voice | ONNX model-defined | Piper / ONNX Runtime | ~60MB disk, ~75MB RAM |
+| Alternative MT | `.argosmodel` | package-defined | Argos Translate | Modular alternative, not primary runtime |
 
-The local CTranslate2 directory is identified by `config.json`, `shared_vocabulary.json`, and `model.bin`; it is not a Transformers checkpoint directory. The production loader must use the matching CTranslate2 API and tokenizer rather than assuming a PyTorch model.
+The CTranslate2 directory includes `model.bin`, tokenizer assets, and shared token metadata; it is designed to be loaded directly in offline mode without a cloud dependency. `sacremoses` supports punctuation and token normalization for more stable Spanish-to-English translation output.

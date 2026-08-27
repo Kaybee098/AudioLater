@@ -1,100 +1,107 @@
 # Edge AI Wearable Audio Translator
 
-An offline Spanish-to-English audio translation prototype for low-power edge hardware. The intended pipeline runs speech recognition, machine translation, and speech synthesis locally, keeping audio and text on the device and avoiding cloud latency and connectivity requirements.
+An offline Spanish-to-English edge translation pipeline designed for constrained devices. The stack combines a local Whisper speech recognizer, a compact INT8 CTranslate2 machine-translation model, and an offline Piper voice engine so the system can operate without cloud APIs or persistent network access.
 
-## Architecture
+## Architecture summary
 
 ```mermaid
 flowchart LR
-    A[WAV or microphone] --> B[Whisper.cpp\nQ8_0 STT]
-    B --> C[Spanish text]
-    C --> D[MarianMT\nCTranslate2 INT8]
-    D --> E[English text]
-    E --> F[Piper\nONNX TTS]
-    F --> G[English WAV]
+    A[WAV or microphone] --> B[Whisper base-q5_1\n`ggml-base-q5_1.bin`]
+    B --> C[Spanish transcript]
+    C --> D[Helsinki-NLP/opus-mt-es-en\nCTranslate2 INT8]
+    D --> E[English translation]
+    E --> F[Piper ONNX TTS]
+    F --> G[English WAV output]
 ```
 
-The current repository has a working Whisper subprocess wrapper and an INT8 model conversion utility. `audio_translator/main_translator.py` is still an empty orchestration scaffold, and the checked-in `audio_translator/Piper/` and `audio_translator/Voices/` directories are empty. The detailed documentation describes both the implemented components and the target production integration contract.
+The operational entry point is `audio_translator/main_translator.py`. The transcriber module is `audio_translator/Transcriber/transcribe_engine.py`, and the translation runtime is `audio_translator/Translator/translate_engine.py` with the generated `audio_translator/Translator/opus-mt-es-en-int8` model directory.
 
 ## Repository layout
 
 ```text
 .
-├── audio_translator/
-│   ├── Transcriber/test_whisper.py       # Whisper CLI wrapper
-│   ├── convert_mach_trans.py             # CTranslate2 INT8 conversion
-│   ├── main_translator.py                # End-to-end scaffold
-│   ├── Piper/                            # Provision Piper here
-│   └── Voices/                           # Provision ONNX voice here
-├── opus-mt-es-en-int8/                   # Local CTranslate2 model
-├── docs/                                 # Architecture and deployment guides
+├── .gitignore
+├── README.md
 ├── requirements.txt
-└── README.md
+├── venv/                                  # root virtual environment
+├── audio_translator/
+│   ├── main_translator.py                 # end-to-end orchestrator
+│   ├── convert_mach_trans.py             # Hugging Face -> CTranslate2 INT8 conversion
+│   ├── LICENSE
+│   ├── README.md
+│   ├── Piper/                            # Piper runtime assets
+│   ├── Translator/
+│   │   ├── translate_engine.py            # INT8 OPUS translation engine
+│   │   └── opus-mt-es-en-int8/           # converted model folder
+│   ├── Transcriber/
+│   │   ├── transcribe_engine.py          # Whisper CLI wrapper and cleanup logic
+│   │   ├── Whisper/
+│   │   │   └── whisper-cli.exe            # bundled Whisper runtime
+│   │   ├── ggml-base-q5_1.bin            # quantized Whisper base model
+│   │   └── test_audio2.wav               # local sample input
+│   └── Voices/
+│       ├── TTS_Engine.py                 # local Piper wrapping logic
+│       └── ...                           # ONNX voice payloads
+├── docs/
+│   ├── runtime_tracker.md
+│   ├── 01_architecture.md
+│   ├── 02_diagrams.md
+│   ├── 03_pipeline_reference.md
+│   └── 04_deployment_and_optimization.md
+└── venv/                                  # standard project environment
 ```
 
 ## Fast start
 
 ### Prerequisites
 
-- Python 3.9 or newer
-- A matching Whisper.cpp runtime (`whisper-cli.exe` on the current Windows setup)
-- The Whisper model `ggml-tiny-q8_0.bin`
-- Piper runtime and an English ONNX voice for TTS
-- CPU and memory capacity appropriate for local inference
+- Python 3.9+
+- A root-level virtual environment at `venv/`
+- Whisper runtime and model payload in `audio_translator/Transcriber/`
+- Local CTranslate2 translated model in `audio_translator/Translator/opus-mt-es-en-int8/`
+- Piper runtime and voice assets in `audio_translator/Piper/` and `audio_translator/Voices/`
+- Memory headroom consistent with a low-power ARM target
 
-### Install Python dependencies
-
-Windows PowerShell:
+### Install dependencies
 
 ```powershell
+cd C:\path\to\edge_and_optimization_on_wearable_AI_audio_translator
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+python -m pip install sacremoses
 ```
 
-Linux:
-
-```bash
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-```
-
-### Run the implemented STT smoke test
-
-Place `whisper-cli.exe`, its matching DLLs, and `ggml-tiny-q8_0.bin` in `audio_translator/Transcriber/`, then run:
+### Run the pipeline
 
 ```powershell
-python audio_translator/Transcriber/test_whisper.py
+python audio_translator/main_translator.py --show-transcript
 ```
 
-The current script always uses `audio_translator/Transcriber/test_audio.wav` and does not yet expose CLI arguments. The command prints the Spanish transcript when the bundled Whisper runtime succeeds. This is an STT test, not yet a complete translation run.
+This runs the local pipeline as:
 
-### Generate the INT8 translation model
+1. STT stage: `audio_translator/Transcriber/transcribe_engine.py`
+2. MT stage: `audio_translator/Translator/translate_engine.py`
+3. TTS stage: `audio_translator/Voices/TTS_Engine.py`
 
-From the repository root, with network access for the initial download:
+### Convert the OPUS translation model
 
 ```powershell
 python audio_translator/convert_mach_trans.py
 ```
 
-The converter downloads `Helsinki-NLP/opus-mt-es-en` and writes a CTranslate2 INT8 model to `opus-mt-es-en-int8/`. The generated directory is ignored by Git, so retain it as a deployment artifact or regenerate it during provisioning.
+The converter downloads the `Helsinki-NLP/opus-mt-es-en` model and writes the compact `INT8` CTranslate2 output to `audio_translator/Translator/opus-mt-es-en-int8/`.
 
-## Model weights and runtime assets
+## Model assets and deployment notes
 
-Provision these assets at the paths expected by the code and target runtime:
-
-| Asset | Required location | Purpose |
+| Asset | Location | Notes |
 |---|---|---|
-| `ggml-tiny-q8_0.bin` | `audio_translator/Transcriber/` | Quantized Spanish STT |
-| `whisper-cli.exe` and matching DLLs | `audio_translator/Transcriber/` | Whisper.cpp execution on Windows |
-| `model.bin`, `config.json`, vocabulary | `opus-mt-es-en-int8/` | CTranslate2 INT8 Spanish-to-English MT |
-| Piper executable/runtime | `audio_translator/Piper/` | Offline TTS execution |
-| `en_US-ryan-low.onnx` and `.json` | `audio_translator/Voices/` | English Piper voice |
-
-Large model and binary assets are excluded by `.gitignore`. Record their versions and checksums in a release manifest before deploying to a device.
+| Whisper `base-q5_1` | `audio_translator/Transcriber/ggml-base-q5_1.bin` | Quantized STT model, ~85MB |
+| Whisper CLI | `audio_translator/Transcriber/Whisper/whisper-cli.exe` | C++ runtime for Windows build |
+| INT8 MT | `audio_translator/Translator/opus-mt-es-en-int8/` | Converted with CTranslate2, ~75MB disk, ~55MB RAM |
+| Piper voice | `audio_translator/Voices/` | ONNX voice assets, ~60MB disk, ~75MB RAM |
+| Optional Alt engine | `.argosmodel` package | Argos Translate remains a modular alternative |
 
 ## Documentation
 
