@@ -60,7 +60,7 @@ audio_translator/
 
 ```bash
 git clone <repository-url>
-cd Edge-and-Optimization-on-Wearable-AI-Audio-Translator
+cd cd AudioLater
 
 ```
 
